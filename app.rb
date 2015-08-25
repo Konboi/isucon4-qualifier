@@ -50,10 +50,10 @@ module Isucon4
       def ip_banned?
         logs = db.xquery("select succeeded from login_log where ip = ? order by created_at desc limit 10;", request.ip)
         logs.each do |log|
-          return if log["succeeded"]
+          return true if log["succeeded"]
         end
 
-        config[:ip_ban_threshold] <= log['failures']
+        return false
       end
 
       def attempt_login(login, password)
