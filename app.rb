@@ -9,7 +9,7 @@ module Isucon4
   class App < Sinatra::Base
     use Rack::Session::Cookie, secret: ENV['ISU4_SESSION_SECRET'] || 'shirokane'
     use Rack::Flash
-    use Rack::Lineprof
+    # use Rack::Lineprof, profile: 'app.rb'
 
     set :public_folder, File.expand_path('../../public', __FILE__)
 
