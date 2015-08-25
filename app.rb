@@ -48,7 +48,7 @@ module Isucon4
       end
 
       def ip_banned?
-        logs = db.xquery("select succeeded from login_log where ip = ? order by created_at desc limit 10;", request.ip, last_success_id)
+        logs = db.xquery("select succeeded from login_log where ip = ? order by created_at desc limit 10;", request.ip)
         logs.each do |log|
           return if log["succeeded"]
         end
