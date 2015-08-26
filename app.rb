@@ -56,7 +56,7 @@ class Isucon4App < Sinatra::Base
       "isu4:fail_ip:#{ip}"
     end
 
-    def redis_key_nextlast(user = {'id' => '*'})
+    def redis_key_nextlast(user)
       "isu4:nextlast:#{user['login']}"
     end
 
