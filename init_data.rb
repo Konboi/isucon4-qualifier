@@ -22,6 +22,7 @@ fail_users  = Hash.new(0)
 fail_ips    = Hash.new(0)
 last_logins = {}
 
+puts "start cache data"
 db.xquery("select * from login_log").each do |log|
   user_id, login, ip, success, created_at = log.values_at('user_id', 'login', 'ip', 'succeeded', 'created_at')
 
@@ -46,3 +47,4 @@ db.xquery("select * from login_log").each do |log|
     redis.set("isu4:fail_user:#{k}", v)
   end
 end
+puts "finish cache data"
