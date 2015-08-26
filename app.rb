@@ -77,9 +77,9 @@ class Isucon4App < Sinatra::Base
 
         if redis_db.exists(nextlast_key)
           redis_db.rename(nextlast_key, last_key)
-          redis_db.set(last_key, {ip: request.ip, created_at: Time.now.to_i}.to_json)
+          redis_db.set(last_key, {ip: request.ip, created_at: Time.now}.to_json)
         else
-          redis_db.set(nextlast_key, {ip: request.ip, created_at: Time.now.to_i}.to_json)
+          redis_db.set(nextlast_key, {ip: request.ip, created_at: Time.now}.to_json)
         end
       else
         redis_db.incr(fail_user_key)
@@ -155,7 +155,7 @@ class Isucon4App < Sinatra::Base
 
       # db.xquery('SELECT * FROM login_log WHERE succeeded = 1 AND user_id = ? ORDER BY id DESC LIMIT 2', current_user['id']).each.last
 
-      key = redis_key_nextlast(current_user)
+      key        = redis_key_nextlast(current_user)
       last_login = JSON.parse(redis_db.get(key))
 
       return last_login
