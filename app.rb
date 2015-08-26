@@ -22,8 +22,7 @@ class Isucon4App < Sinatra::Base
     end
 
     def db
-      return $mysql if $mysql
-      $mysql = Mysql2::Client.new(
+      Thread.current[:isu4_db] ||= Mysql2::Client.new(
         host: ENV['ISU4_DB_HOST'] || 'localhost',
         port: ENV['ISU4_DB_PORT'] ? ENV['ISU4_DB_PORT'].to_i : nil,
         username: ENV['ISU4_DB_USER'] || 'root',
