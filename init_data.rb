@@ -11,6 +11,41 @@ db = Mysql2::Client.new(
   reconnect: true,
 )
 
+redis = Redis.new(
+  :host   => "127.0.0.1",
+  :port   => 6379,
+  :driver => :hiredis
+)
+
+fail_users  = Hash.new(0)
+fail_ips    = Hash.new(0)
+last_logins = {}
+
 db.xquery("select * from login_log").each do |log|
-  puts log
+  user_id, login, ip, success, created_at = log.values_at('user_id', 'login', 'ip', 'succeeded', 'created_at')
+
+  if success == 1
+    fail_ips[ip]       = 0
+    fail_users[login]  = 0
+    last_logins[login] = {ip: ip, created_at: created_at}
+  else
+    fail_ips[ip]      += 1
+    fail_users[login] += 1 if user_id
+  end
+
+  last_logins.each do |k, v|
+    puts k
+    puts v.to_a.flatten
+    # redis.hmset("isu4:last:#{k}", v.to_a.flatten)
+  end
+
+  fail_ips.each do |k, v|
+    puts k
+    puts v
+  end
+
+  fail_users.each do |k, v|
+    puts k
+    puts v
+  end
 end
