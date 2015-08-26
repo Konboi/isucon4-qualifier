@@ -1,6 +1,7 @@
 require 'hiredis'
 require 'redis'
 require 'mysql2-cs-bind'
+require 'json'
 
 db = Mysql2::Client.new(
   host: ENV['ISU4_DB_HOST'] || 'localhost',
@@ -34,18 +35,14 @@ db.xquery("select * from login_log").each do |log|
   end
 
   last_logins.each do |k, v|
-    puts k
-    puts v.to_a.flatten
-    # redis.hmset("isu4:last:#{k}", v.to_a.flatten)
+    redis.set("isu4:last_login:#{k}", v.to_json)
   end
 
   fail_ips.each do |k, v|
-    puts k
-    puts v
+    redis.set("isu4:fail_ip:#{k}", v)
   end
 
   fail_users.each do |k, v|
-    puts k
-    puts v
+    redis.set("isu4:fail_user:#{k}", v)
   end
 end
