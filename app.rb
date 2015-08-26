@@ -5,6 +5,8 @@ require 'rack-flash'
 require 'json'
 require 'rack-lineprof'
 require 'erubis'
+require 'hiredis'
+require 'redis'
 
 class Isucon4App < Sinatra::Base
   use Rack::Session::Cookie, secret: ENV['ISU4_SESSION_SECRET'] || 'shirokane'
@@ -32,48 +34,102 @@ class Isucon4App < Sinatra::Base
       )
     end
 
+    def redis_db
+      return $redis if $redis
+
+      $redis = Redis.new(
+        :host   => "127.0.0.1",
+        :port   => 6379,
+        :driver => :hiredis
+      )
+    end
+
+    def redis_key_fail_user(user)
+      "isu4:fail_user:#{user['login']}"
+    end
+
+    def redis_key_last_login(user)
+      "isu4:last_login:#{user['login']}"
+    end
+
+    def redis_key_fail_ip(ip)
+      "isu4:fail_ip:#{ip}"
+    end
+
+    def redis_key_nextlast(user = {'id' => '*'})
+      "isu4:nextlast:#{user['login']}"
+    end
+
     def calculate_password_hash(password, salt)
       Digest::SHA256.hexdigest "#{password}:#{salt}"
     end
 
-    def login_log(succeeded, login, user_id = nil)
-      db.xquery("INSERT INTO login_log" \
-        " (`created_at`, `user_id`, `login`, `ip`, `succeeded`)" \
-        " VALUES (?,?,?,?,?)",
-        Time.now, user_id, login, request.ip, succeeded ? 1 : 0)
+    def login_log(succeeded, login, user)
+      fail_user_key = user && redis_key_fail_user(user)
+      fail_ip_key   = redis_key_fail_ip(request.ip)
+
+      if succeeded
+        last_key = redis_key_last_login(user)
+        nextlast_key = redis_key_nextlast(user)
+
+        redis_db.set(fail_user_key, 0)
+        redis_db.set(fail_ip_key, 0)
+
+        if redis_db.exists(nextlast_key)
+          redis_db.rename(nextlast_key, last_key)
+          redis_db.set(last_key, {ip: request.ip, created_at: Time.now.to_i}.to_json)
+        else
+          redis_db.set(nextlast_key, {ip: request.ip, created_at: Time.now.to_i}.to_json)
+        end
+      else
+        redis_db.incr(fail_user_key)
+        redis_db.incr(fail_ip_key)
+      end
+
+      #db.xquery("INSERT INTO login_log" \
+      #  " (`created_at`, `user_id`, `login`, `ip`, `succeeded`)" \
+      #  " VALUES (?,?,?,?,?)",
+      #  Time.now, user_id, login, request.ip, succeeded ? 1 : 0)
     end
 
     def user_locked?(user)
       return nil unless user
-      log = db.xquery("SELECT COUNT(1) AS failures FROM login_log WHERE user_id = ? AND id > IFNULL((select id from login_log where user_id = ? AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0);", user['id'], user['id']).first
+      # log = db.xquery("SELECT COUNT(1) AS failures FROM login_log WHERE user_id = ? AND id > IFNULL((select id from login_log where user_id = ? AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0);", user['id'], user['id']).first
+      # config[:user_lock_threshold] <= log['failures']
 
-      config[:user_lock_threshold] <= log['failures']
+      fail_user_key = redis_key_fail_user(user)
+      count = redis_db.exists(fail_user_key) == true ? redis_db.get(fail_user_key).to_i : 0
+      config[:user_lock_threshold] <= count
     end
 
     def ip_banned?
-      log = db.xquery("SELECT COUNT(1) AS failures FROM login_log WHERE ip = ? AND id > IFNULL((select id from login_log where ip = ? AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0);", request.ip, request.ip).first
+      # log = db.xquery("SELECT COUNT(1) AS failures FROM login_log WHERE ip = ? AND id > IFNULL((select id from login_log where ip = ? AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0);", request.ip, request.ip).first
+      # config[:ip_ban_threshold] <= log['failures']
 
-      config[:ip_ban_threshold] <= log['failures']
+      fail_ip_key = redis_key_fail_ip(request.ip)
+      count = redis_db.exists(fail_ip_key) == true ? redis_db.get(fail_ip_key).to_i : 0
+
+      config[:ip_ban_threshold] <= count
     end
 
     def attempt_login(login, password)
       user = db.xquery('SELECT * FROM users WHERE login = ?', login).first
 
       if ip_banned?
-        login_log(false, login, user ? user['id'] : nil)
+        login_log(false, login, user ? user : nil)
         return [nil, :banned]
       end
 
       if user_locked?(user)
-        login_log(false, login, user['id'])
+        login_log(false, login, user)
         return [nil, :locked]
       end
 
       if user && calculate_password_hash(password, user['salt']) == user['password_hash']
-        login_log(true, login, user['id'])
+        login_log(true, login, user)
         [user, nil]
       elsif user
-        login_log(false, login, user['id'])
+        login_log(false, login, user)
         [nil, :wrong_password]
       else
         login_log(false, login)
@@ -97,7 +153,12 @@ class Isucon4App < Sinatra::Base
     def last_login
       return nil unless current_user
 
-      db.xquery('SELECT * FROM login_log WHERE succeeded = 1 AND user_id = ? ORDER BY id DESC LIMIT 2', current_user['id']).each.last
+      # db.xquery('SELECT * FROM login_log WHERE succeeded = 1 AND user_id = ? ORDER BY id DESC LIMIT 2', current_user['id']).each.last
+
+      key = redis_key_nextlast(current_user)
+      last_login = JSON.parse(redis_db.get(key))
+
+      return last_login
     end
 
     def banned_ips
